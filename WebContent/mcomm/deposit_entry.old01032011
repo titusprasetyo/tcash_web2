@@ -1,0 +1,221 @@
+<%@ page language = "java" import = "java.io.*, java.util.*, java.text.*, java.sql.*" %>
+<jsp:useBean id="DbCon" scope="page" class="tsel_tunai.DbCon"></jsp:useBean>
+
+<%
+String login = request.getParameter("login");
+String user = (String)session.getValue("user");
+if (login == null || !login.equals(user)) {
+	response.sendRedirect("welcome.jsp");
+}
+String 	merchant = "",
+		amount = "",
+		doc_number = "",
+		note = "",
+		deposit_id = "";
+		
+deposit_id = request.getParameter("deposit_id");		
+merchant = request.getParameter("merchant");	
+amount = request.getParameter("amount");
+doc_number = request.getParameter("doc_number");
+note = request.getParameter("note");
+
+Connection conn = null;
+String query = null; 
+PreparedStatement pstmt = null;
+Statement st = null;
+ResultSet rs = null;
+
+if(user != null)
+{
+	session.putValue("user", user);
+		
+	if (deposit_id != null) {
+		try {
+			conn = DbCon.getConnection();
+			query = "select * from merchant_deposit where deposit_id=" + deposit_id;
+			pstmt = conn.prepareStatement(query);
+			rs = pstmt.executeQuery();
+			if (rs.next()) {
+				merchant = rs.getString("merchant_id");		
+				amount = rs.getString("amount");
+				doc_number = rs.getString("doc_number");
+				deposit_id = rs.getString("deposit_id");
+				note = rs.getString("note");
+			}			
+			pstmt.close();rs.close();
+		} catch (Exception e) {
+			response.sendRedirect("deposit_entry.jsp?msg=Database+error");
+		} finally {
+			if (conn != null) {
+				conn.close();
+			}
+		}
+
+	}					
+						
+	if (request.getMethod().equals("POST")) {		
+		conn = DbCon.getConnection();
+		try {
+			if (deposit_id==null) {
+				query = "select doc_number from MERCHANT_DEPOSIT where doc_number='"+doc_number+"'";
+			} else {
+				query = "select doc_number from MERCHANT_DEPOSIT where doc_number='"+doc_number+"' AND not (deposit_id='"+deposit_id+"')";
+			}
+			pstmt = conn.prepareStatement(query);
+			rs = pstmt.executeQuery();
+			if (rs.next()) {
+				if (deposit_id == null) {
+					response.sendRedirect("deposit_entry.jsp?msg=Doc+number+telah+digunakan+sebelumnya");
+				} else {
+					response.sendRedirect("deposit_entry.jsp?msg=Doc+number+telah+digunakan+sebelumnya&deposit_id=" + request.getParameter("deposit_id"));
+				}
+			} else {
+				int nAmount = 0;
+				try {
+					nAmount = Integer.parseInt(amount);	
+				} catch (Exception e) {
+					if (deposit_id == null) {
+						response.sendRedirect("deposit_entry.jsp?msg=Jumlah+deposit+tidak+valid");	
+					} else {
+						response.sendRedirect("deposit_entry.jsp?msg=Jumlah+deposit+tidak+valid&deposit_id=" + request.getParameter("deposit_id"));
+					}
+				}
+				if (nAmount <= 0) {
+					if (deposit_id == null) {
+						response.sendRedirect("deposit_entry.jsp?msg=Jumlah+deposit+tidak+valid");	
+					} else {
+						response.sendRedirect("deposit_entry.jsp?msg=Jumlah+deposit+tidak+valid&deposit_id=" + request.getParameter("deposit_id"));
+					}
+				}
+			}
+			pstmt.close();rs.close();
+			
+			if (deposit_id == null) {
+					query = "insert into MERCHANT_DEPOSIT (MERCHANT_ID, AMOUNT, DOC_NUMBER, NOTE, DEPOSIT_TIME, IS_EXECUTED, ENTRY_LOGIN) VALUES ('"+merchant+"',"+amount+",'"+doc_number+"','"+note+"',sysdate,'0','"+login+"')";
+					pstmt = conn.prepareStatement(query);
+					pstmt.executeUpdate();
+					pstmt.close();	
+			} else {
+				System.out.println("Deposit ID:" + deposit_id);
+				query = "update MERCHANT_DEPOSIT set MERCHANT_ID='"+merchant+"', AMOUNT="+amount+", DOC_NUMBER='"+doc_number+"', NOTE='"+note+"', DEPOSIT_TIME=sysdate, ENTRY_LOGIN='"+login+"' WHERE deposit_id='"+deposit_id+"'";
+				pstmt = conn.prepareStatement(query);
+				pstmt.executeUpdate();
+				pstmt.close();
+			}
+			
+			query = "INSERT INTO ACTIVITY_LOG (USERLOGIN, ACCESS_TIME, ACTIVITY, NOTE, IP, REASON) values ('"+login+"', sysdate, 'Modify Deposit', '"+merchant+"|"+amount+"|"+doc_number+"', '"+request.getRemoteAddr()+"', '-')";
+			pstmt = conn.prepareStatement(query);
+			pstmt.executeUpdate();
+			pstmt.close();
+				
+			response.sendRedirect("deposit_entry.jsp?msg=Deposit+successfully+added");
+		} catch (Exception e) {
+			e.printStackTrace();
+			response.sendRedirect("deposit_entry.jsp?msg=Ada+kesalahan+pada+data+yang+anda+masukkan+mohon+periksa+kembali");
+		} finally {
+			conn.close();
+		}
+	}
+
+
+	%>
+<html>
+<head>
+<title>-Telkomsel Tunai-</title>
+</head>
+<style>
+.link {
+color : #CC6633;
+text-decoration : none;
+}
+.link1 {
+color : #CC6633;
+text-decoration : underline;
+}
+</style>
+<body>
+<div align="center">
+  <p>&nbsp;</p>
+	
+	
+ 
+	<table width="60%" border="0" cellspacing="3" cellpadding="3">
+	<%
+	if (request.getParameter("msg") != null) {
+		out.println("<center><strong>" + request.getParameter("msg") + "</strong></center>");
+	}
+	%>
+	  <form name="form" method="post" action="deposit_entry.jsp">
+		<tr> 
+		  <td class="unnamed1" width="20%">Merchant</td>
+		  <td width="80%" class="unnamed1">
+	<select name='merchant'>
+	<%
+		try {
+			conn = DbCon.getConnection();
+			query = "select a.MERCHANT_ID, b.NAME from MERCHANT a, MERCHANT_INFO b WHERE a.MERCHANT_INFO_ID=b.MERCHANT_INFO_ID and a.STATUS='A' order by b.NAME";
+			pstmt = conn.prepareStatement(query);
+			rs = pstmt.executeQuery();
+			while (rs.next()) {
+				if (rs.getString("MERCHANT_ID").equals(merchant)) {
+					out.println("<option value='" + merchant +"' selected>" + rs.getString("NAME") + "</option>	");
+				} else {
+					out.println("<option value='" + rs.getString("MERCHANT_ID") + "'>" + rs.getString("NAME") + "</option>	");
+				}
+			}
+			rs.close();pstmt.close();
+		} catch (Exception e) {
+			e.printStackTrace();
+			response.sendRedirect("index.jsp?msg=Database+error");
+		} finally {
+			if (conn != null) {
+				conn.close();
+			}
+		}
+	%>
+	</select>
+		  </td>
+		</tr>
+		<tr> 
+		  <td class="unnamed1" width="20%">Amount</td>
+		  <td width="80%" class="unnamed1"> 
+			<input name="amount" value="<%=amount%>" type="text" size="20" class="box_text" value="628">
+		  </td>
+		</tr>
+		<tr> 
+		  <td class="unnamed1" width="20%">Doc. Number</td>
+		  <td width="80%" class="unnamed1"> 
+			<input name="doc_number" value="<%=doc_number%>" type="text" size="20" class="box_text" value="628">
+		  </td>
+		</tr>
+		<tr> 
+		  <td class="unnamed1" width="20%">Note</td>
+		  <td width="80%" class="unnamed1"> 
+			<input name="note" value="<%=note%>" type="text" size="20" class="box_text" value="628">
+		  </td>
+		</tr>
+		<tr> 
+		  <td class="unnamed1" width="20%">&nbsp;</td>
+		  <td class="unnamed1" width="80%"> 
+			<input type="submit" name="Submit" value="   Submit     " class="box_text">
+		  </td>
+		</tr>
+	<%
+	if (request.getParameter("deposit_id") != null) {
+		out.println("<input type=hidden name=deposit_id value='" + deposit_id + "'>");
+	}
+	%>
+	  </form>
+	</table>
+		
+	<table width="40%" border="0" cellspacing="0" cellpadding="0">
+          <tr> 
+            <td><div align="center"><font color="#CC6633" size="1" face="Verdana, Arial, Helvetica, sans-serif">Sebelum 
+                anda keluar dari layanan ini pastikan anda telah logout agar login 
+                anda tidak dapat dipakai oleh orang lain.</font></div></td>
+			
+          </tr>
+        </table>
+<%
+}
+%>
